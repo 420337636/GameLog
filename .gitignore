@@ -1,0 +1,46 @@
+# 构建产物
+dist/
+bin/
+obj/
+*.exe
+*.pdb
+
+# 运行数据（绝对不要提交用户数据）
+GameLogData/
+data/
+logs/
+*.log
+games.json
+settings.json
+pending.txt
+.imported
+
+# 本地测试/渲染目录
+.render*/
+.test*/
+.mtest/
+.smoke*/
+.importtest/
+.baikeprobe/
+.demo/
+_scratch/
+src2/
+_shots/
+
+# 签名材料：私钥、证书、密码永远不入库
+*.pfx
+*.p12
+*.pvk
+*.snk
+*.cer
+*.crt
+secrets/
+signing/
+
+# 编辑器 / 系统
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+desktop.ini

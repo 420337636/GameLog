@@ -1,0 +1,66 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      # 有证书时才执行签名步骤；secret 不能直接写在 if 里，所以先放到 env
+      HAS_SIGNING_CERT: ${{ secrets.SIGNING_PFX_BASE64 != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          Write-Host "OS: $([Environment]::OSVersion.VersionString)"
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) { throw "csc.exe not found" }
+          & $csc /? | Select-Object -First 2
+
+      - name: Build (in-box .NET Framework compiler)
+        shell: cmd
+        run: build.cmd
+
+      - name: Sign GameLog.exe (optional)
+        if: env.HAS_SIGNING_CERT == 'true'
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found" }
+
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:PFX_PASSWORD `
+              /tr http://timestamp.digicert.com /td SHA256 dist\GameLog.exe
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+
+          & $signtool.FullName verify /pa /v dist\GameLog.exe
+          Remove-Item $pfx -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameLog-${{ github.sha }}
+          path: |
+            dist/GameLog.exe
+            dist/icon.ico
+          if-no-files-found: error
