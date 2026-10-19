@@ -39,7 +39,13 @@ namespace GameLog
 
         string sortMode = "recent";
         string selectedId = null;
+        bool manualScanning;
+        string layoutMode = "cards";
+        double maxSecondsForBars;
+        StackPanel listHost;
         readonly Dictionary<string, GameCard> cards = new Dictionary<string, GameCard>();
+        readonly Dictionary<string, GameRow> rows = new Dictionary<string, GameRow>();
+        readonly List<KeyValuePair<string, Border>> layoutButtons = new List<KeyValuePair<string, Border>>();
 
         public MainWindow(App app)
         {
@@ -47,6 +53,7 @@ namespace GameLog
             this.store = app.Store;
             this.monitor = app.Monitor;
             sortMode = store.Settings.SortMode;
+            layoutMode = string.IsNullOrEmpty(store.Settings.Layout) ? "cards" : store.Settings.Layout;
 
             Title = "GameLog · 游戏时光";
             Width = 1180;
@@ -119,10 +126,20 @@ namespace GameLog
             scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
             scroller.Padding = new Thickness(17, 4, 17, 12);
             scroller.Background = Brushes.Transparent;
+
             cardsHost = new WrapPanel();
             cardsHost.Orientation = Orientation.Horizontal;
             cardsHost.Margin = new Thickness(0);
-            scroller.Content = cardsHost;
+
+            listHost = new StackPanel();
+            listHost.Orientation = Orientation.Vertical;
+            listHost.Margin = new Thickness(9, 0, 9, 0);
+
+            var layoutPanel = new Grid();
+            layoutPanel.Children.Add(cardsHost);
+            layoutPanel.Children.Add(listHost);
+            scroller.Content = layoutPanel;
+
             content.Children.Add(scroller);
             content.Children.Add(BuildEmptyState());
             Grid.SetRow(content, 3);
@@ -154,6 +171,7 @@ namespace GameLog
             root.Children.Add(drop);
 
             SetupDragAndDrop();
+            ApplyLayout();
             return root;
         }
 
@@ -373,6 +391,8 @@ namespace GameLog
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             // logo
             var iconBox = new Border();
@@ -418,12 +438,29 @@ namespace GameLog
             Grid.SetColumn(sortHost, 3);
             header.Children.Add(sortHost);
 
+            // 布局切换
+            var layoutSwitch = BuildLayoutSwitch();
+            layoutSwitch.VerticalAlignment = VerticalAlignment.Center;
+            layoutSwitch.Margin = new Thickness(10, 0, 0, 0);
+            Grid.SetColumn(layoutSwitch, 4);
+            header.Children.Add(layoutSwitch);
+
+            // 立即扫描
+            var scan = Ui.Btn("⟳  立即扫描", false, delegate { RunManualScan(); });
+            scan.VerticalAlignment = VerticalAlignment.Center;
+            scan.Margin = new Thickness(10, 0, 0, 0);
+            scan.Height = 36;
+            scan.MinWidth = 96;
+            scan.ToolTip = "马上扫描一次运行中的程序，识别为游戏就自动加入";
+            Grid.SetColumn(scan, 5);
+            header.Children.Add(scan);
+
             // 添加
             var add = Ui.Btn("＋  添加游戏", true, delegate { ChooseExe(); });
             add.VerticalAlignment = VerticalAlignment.Center;
-            add.Margin = new Thickness(12, 0, 0, 0);
+            add.Margin = new Thickness(8, 0, 0, 0);
             add.Height = 36;
-            Grid.SetColumn(add, 4);
+            Grid.SetColumn(add, 6);
             header.Children.Add(add);
 
             // 设置
@@ -431,7 +468,7 @@ namespace GameLog
             settings.VerticalAlignment = VerticalAlignment.Center;
             settings.Margin = new Thickness(8, 0, 0, 0);
             settings.Height = 36;
-            Grid.SetColumn(settings, 5);
+            Grid.SetColumn(settings, 7);
             header.Children.Add(settings);
 
             return header;
@@ -672,13 +709,24 @@ namespace GameLog
         {
             if (cardsHost == null) return;
             cardsHost.Children.Clear();
+            listHost.Children.Clear();
             cards.Clear();
+            rows.Clear();
 
             var games = store.Snapshot();
             games.Sort(CompareGames);
 
             string filter = searchBox == null ? "" : (searchBox.Text ?? "").Trim();
             int shown = 0;
+
+            // 列表布局的进度条以“最长时长”为满格
+            maxSecondsForBars = 0;
+            foreach (var g in games)
+            {
+                if (g.TotalSeconds > maxSecondsForBars) maxSecondsForBars = g.TotalSeconds;
+            }
+
+            bool listMode = layoutMode == "list";
 
             foreach (var g in games)
             {
@@ -689,23 +737,44 @@ namespace GameLog
                     if (!match) continue;
                 }
 
-                var card = new GameCard(store, g);
-                card.CardClicked += delegate (object s, EventArgs e)
+                if (listMode)
                 {
-                    SelectCard((s as GameCard).Game.Id);
-                };
-                card.CardDoubleClicked += delegate (object s, EventArgs e)
+                    var row = new GameRow(store, g);
+                    row.RowClicked += delegate (object s, EventArgs e)
+                    {
+                        SelectCard((s as GameRow).Game.Id);
+                    };
+                    row.RowDoubleClicked += delegate (object s, EventArgs e)
+                    {
+                        LaunchGame((s as GameRow).Game);
+                    };
+                    row.ContextMenu = BuildCardMenu(g);
+                    row.SetSelected(g.Id == selectedId);
+                    row.Refresh(monitor, maxSecondsForBars);
+                    rows[g.Id] = row;
+                    listHost.Children.Add(row);
+                }
+                else
                 {
-                    LaunchGame((s as GameCard).Game);
-                };
-                card.ContextMenu = BuildCardMenu(g);
-                card.SetSelected(g.Id == selectedId);
-                cards[g.Id] = card;
-                cardsHost.Children.Add(card);
+                    var card = new GameCard(store, g);
+                    card.CardClicked += delegate (object s, EventArgs e)
+                    {
+                        SelectCard((s as GameCard).Game.Id);
+                    };
+                    card.CardDoubleClicked += delegate (object s, EventArgs e)
+                    {
+                        LaunchGame((s as GameCard).Game);
+                    };
+                    card.ContextMenu = BuildCardMenu(g);
+                    card.SetSelected(g.Id == selectedId);
+                    cards[g.Id] = card;
+                    cardsHost.Children.Add(card);
+                }
                 shown++;
             }
 
             UpdateSortVisuals();
+            UpdateLayoutButtons();
             UpdateStats();
             UpdateMenuBanner();
 
@@ -748,6 +817,7 @@ namespace GameLog
                 return;
             }
             foreach (var kv in cards) kv.Value.Refresh(monitor);
+            foreach (var kv in rows) kv.Value.Refresh(monitor, maxSecondsForBars);
             UpdateStats();
         }
 
@@ -755,8 +825,8 @@ namespace GameLog
         {
             var games = store.Snapshot();
             if (statGames != null) statGames.Text = games.Count + " 款";
-            if (statToday != null) statToday.Text = Ui.DurCompact(store.TodaySeconds());
-            if (statTotal != null) statTotal.Text = Ui.DurCompact(store.TotalSeconds());
+            if (statToday != null) statToday.Text = Ui.Hours(store.TodaySeconds());
+            if (statTotal != null) statTotal.Text = Ui.Hours(store.TotalSeconds());
 
             bool paused = app.MonitorPaused;
             if (monitorChipText != null)
@@ -792,15 +862,80 @@ namespace GameLog
         {
             selectedId = id;
             foreach (var kv in cards) kv.Value.SetSelected(kv.Key == id);
+            foreach (var kv in rows) kv.Value.SetSelected(kv.Key == id);
         }
 
         public void SelectGame(string id)
         {
             if (string.IsNullOrEmpty(id)) return;
-            if (!cards.ContainsKey(id)) Rebuild();
+            if (!cards.ContainsKey(id) && !rows.ContainsKey(id)) Rebuild();
             SelectCard(id);
-            var card = cards.ContainsKey(id) ? cards[id] : null;
-            if (card != null) card.BringIntoView();
+            if (cards.ContainsKey(id)) cards[id].BringIntoView();
+            else if (rows.ContainsKey(id)) rows[id].BringIntoView();
+        }
+
+        FrameworkElement BuildLayoutSwitch()
+        {
+            var host = new Border();
+            host.CornerRadius = new CornerRadius(8);
+            host.Background = Ui.BgSoft;
+            host.BorderBrush = Ui.Line;
+            host.BorderThickness = new Thickness(1);
+            host.Padding = new Thickness(3);
+
+            var sp = new StackPanel();
+            sp.Orientation = Orientation.Horizontal;
+            sp.Children.Add(LayoutButton("▦", "cards", "卡片布局"));
+            sp.Children.Add(LayoutButton("☰", "list", "列表布局"));
+            host.Child = sp;
+            return host;
+        }
+
+        Border LayoutButton(string glyph, string mode, string tip)
+        {
+            var b = new Border();
+            b.CornerRadius = new CornerRadius(6);
+            b.Padding = new Thickness(9, 4, 9, 5);
+            b.Cursor = Cursors.Hand;
+            b.ToolTip = tip;
+            var t = Ui.TxtBlock(glyph, 13, Ui.Sub);
+            b.Child = t;
+            b.MouseLeftButtonUp += delegate { SetLayout(mode); };
+            layoutButtons.Add(new KeyValuePair<string, Border>(mode, b));
+            return b;
+        }
+
+        void SetLayout(string mode)
+        {
+            if (layoutMode == mode) return;
+            layoutMode = mode;
+            store.Settings.Layout = mode;
+            store.SaveSettings();
+            ApplyLayout();
+            Rebuild();
+            Log.Info("界面布局切换为：" + mode);
+        }
+
+        void ApplyLayout()
+        {
+            bool cardMode = layoutMode != "list";
+            if (cardsHost != null) cardsHost.Visibility = cardMode ? Visibility.Visible : Visibility.Collapsed;
+            if (listHost != null) listHost.Visibility = cardMode ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        void UpdateLayoutButtons()
+        {
+            foreach (var kv in layoutButtons)
+            {
+                bool on = kv.Key == layoutMode;
+                kv.Value.Background = on ? Ui.AccentSoft : Brushes.Transparent;
+                var tb = kv.Value.Child as TextBlock;
+                if (tb != null)
+                {
+                    tb.Foreground = on ? Ui.Accent : Ui.Sub;
+                    tb.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+                }
+            }
         }
 
         ContextMenu BuildCardMenu(GameInfo g)
@@ -980,6 +1115,39 @@ namespace GameLog
             w.Owner = this;
             w.ShowDialog();
             Rebuild();
+        }
+
+        public void RunManualScan()
+        {
+            if (app.Discovery == null)
+            {
+                ShowToast("自动发现模块不可用");
+                return;
+            }
+            if (manualScanning)
+            {
+                ShowToast("已经在扫描了，请稍候…");
+                return;
+            }
+            manualScanning = true;
+            ShowToast("正在扫描运行中的程序…");
+            Log.Info("手动触发扫描");
+
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int added = -1;
+                try { added = app.Discovery.ScanNow(); }
+                catch (Exception ex) { Log.Error("手动扫描失败", ex); }
+
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    manualScanning = false;
+                    if (added < 0) ShowToast("扫描正在进行中");
+                    else if (added == 0) ShowToast("扫描完成，没有发现新游戏");
+                    else ShowToast("扫描完成，自动添加了 " + added + " 款游戏");
+                    Rebuild();
+                }));
+            });
         }
 
         public void ShowToast(string message)

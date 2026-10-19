@@ -161,10 +161,10 @@ namespace GameLog
         {
             GameInfo g = Game;
             nameText.Text = g.Name;
-            timeText.Text = "累计 " + Ui.DurCompact(g.TotalSeconds);
+            timeText.Text = "累计 " + Ui.Hours(g.TotalSeconds);
             if (g.TodaySeconds >= 60)
             {
-                todayText.Text = "今日 " + Ui.DurCompact(g.TodaySeconds);
+                todayText.Text = "今日 " + Ui.Hours(g.TodaySeconds);
                 todayText.Visibility = Visibility.Visible;
             }
             else
@@ -180,7 +180,7 @@ namespace GameLog
                 if (start != DateTime.MinValue)
                 {
                     double session = (DateTime.Now - start).TotalSeconds;
-                    timeText.Text = "本次 " + Ui.DurCompact(session) + " · 累计 " + Ui.DurCompact(g.TotalSeconds);
+                    timeText.Text = "本次 " + Ui.Hours(session) + " · 累计 " + Ui.Hours(g.TotalSeconds);
                 }
             }
         }

@@ -55,6 +55,16 @@ namespace GameLog
                 MenuRenderTest(o);
                 return;
             }
+            if (o.Mode == "disc-test")
+            {
+                DiscoveryTest(o);
+                return;
+            }
+            if (o.Mode == "disc-remove")
+            {
+                DiscoveryRemoveTest(o);
+                return;
+            }
             if (o.Mode == "render")
             {
                 Render(o);
@@ -125,7 +135,7 @@ namespace GameLog
                     var sw = new SettingsWindow(app);
                     root = sw.Content as FrameworkElement;
                     W = 680;
-                    H = 800;
+                    H = 900;
                     sw.Content = null;
                 }
                 else if (o.Dialog == "identify")
@@ -200,6 +210,49 @@ namespace GameLog
                 File.WriteAllText(outFile, sb.ToString(), new UTF8Encoding(false));
             }
             catch { }
+        }
+
+        static void DiscoveryRemoveTest(Options o)
+        {
+            var sb = new StringBuilder();
+            var store = new Store(o.DataDir);
+            foreach (var p in o.TestPaths)
+            {
+                var g = store.FindByExe(p);
+                if (g == null) { sb.AppendLine("  " + p + " => not in list"); continue; }
+                store.Remove(g.Id);
+                sb.AppendLine("  " + p + " => removed: " + g.Name);
+            }
+            sb.AppendLine("removed count=" + store.RemovedCount);
+            var d = new Discoverer(store);
+            foreach (var p in o.TestPaths)
+            {
+                string r;
+                try { r = d.AnalyzeForTest(p); } catch (Exception ex) { r = "FAILED: " + ex.Message; }
+                sb.AppendLine("  re-check " + p + " => " + r);
+            }
+            WriteReport(o, "discremove.txt", sb);
+            Environment.Exit(0);
+        }
+
+        static void DiscoveryTest(Options o)
+        {
+            var sb = new StringBuilder();
+            var store = new Store(o.DataDir);
+            var d = new Discoverer(store);
+            sb.AppendLine("discovery test " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            sb.AppendLine("data=" + o.DataDir + "  games=" + store.Games.Count + "  nonGames=" + store.NonGameCount + "  removed=" + store.RemovedCount);
+            foreach (var p in o.TestPaths)
+            {
+                string result;
+                try { result = d.AnalyzeForTest(p); }
+                catch (Exception ex) { result = "FAILED: " + ex.Message; }
+                sb.AppendLine("  " + p + "  =>  " + result);
+            }
+            sb.AppendLine("after: games=" + store.Games.Count + "  nonGames=" + store.NonGameCount + "  removed=" + store.RemovedCount);
+            foreach (var g in store.Snapshot()) sb.AppendLine("  game: " + g.Name + "  <- " + g.ExePath);
+            WriteReport(o, "disctest.txt", sb);
+            Environment.Exit(0);
         }
 
         static void MenuRenderTest(Options o)
@@ -514,6 +567,12 @@ namespace GameLog
                     case "--menu-selftest":
                         o.Mode = "menu-selftest";
                         if (next != null && !next.StartsWith("-")) { o.RenderPath = next; i++; }
+                        break;
+                    case "--disc-test":
+                        o.Mode = "disc-test";
+                        break;
+                    case "--disc-remove":
+                        o.Mode = "disc-remove";
                         break;
                     case "--render":
                         o.Mode = "render";

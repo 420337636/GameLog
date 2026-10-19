@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -25,7 +26,7 @@ namespace GameLog
             this.store = app.Store;
             Title = "设置";
             Width = 680;
-            Height = 800;
+            Height = 900;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             Background = Ui.Bg;
@@ -62,6 +63,62 @@ namespace GameLog
             record.Checked += delegate { SetMonitorEnabled(true); };
             record.Unchecked += delegate { SetMonitorEnabled(false); };
             root.Children.Add(Row(record, "每隔 1 秒检查已添加的游戏是否在运行。"));
+
+            root.Children.Add(SectionTitle("自动发现游戏"));
+            var autoDetect = Ui.Check("自动扫描运行中的程序，识别到游戏就加入列表", store.Settings.AutoDetect, null);
+            autoDetect.Checked += delegate
+            {
+                store.Settings.AutoDetect = true;
+                store.SaveSettings();
+                app.RestartDiscovery();
+            };
+            autoDetect.Unchecked += delegate
+            {
+                store.Settings.AutoDetect = false;
+                store.SaveSettings();
+                app.RestartDiscovery();
+            };
+            root.Children.Add(Row(autoDetect, "只分析非系统盘、非 Program Files 的进程（Steam 游戏库除外）；已经判断过不是游戏的会记住，下次不再分析。"));
+
+            var intervalLabel = Ui.TxtBlock("扫描间隔", 12, Ui.Sub);
+            intervalLabel.Margin = new Thickness(0, 6, 0, 6);
+            root.Children.Add(intervalLabel);
+
+            var intervalRow = new StackPanel();
+            intervalRow.Orientation = Orientation.Horizontal;
+            var intervalButtons = new List<Border>();
+            int[] minutes = { 5, 10, 30, 60 };
+            foreach (int m in minutes)
+            {
+                var pill = new Border();
+                pill.CornerRadius = new CornerRadius(8);
+                pill.Padding = new Thickness(12, 6, 12, 7);
+                pill.Margin = new Thickness(0, 0, 8, 0);
+                pill.Cursor = Cursors.Hand;
+                var t = Ui.TxtBlock(m + " 分钟", 12, Ui.Sub);
+                pill.Child = t;
+                int value = m;
+                pill.MouseLeftButtonUp += delegate
+                {
+                    store.Settings.AutoDetectMinutes = value;
+                    store.SaveSettings();
+                    app.RestartDiscovery();
+                    UpdateIntervalPills(intervalButtons, minutes, store.Settings.AutoDetectMinutes);
+                };
+                intervalButtons.Add(pill);
+                intervalRow.Children.Add(pill);
+            }
+            UpdateIntervalPills(intervalButtons, minutes, store.Settings.AutoDetectMinutes);
+            root.Children.Add(intervalRow);
+
+            var discoveryInfo = Ui.TxtBlock(
+                "已记住 " + store.NonGameCount + " 个非游戏程序、" + store.RemovedCount + " 个手动删除的游戏；"
+                + "这两类都不会再被自动添加。记录保存在 discovery.json，删除该文件可重新判断。",
+                11, Ui.Dim);
+            discoveryInfo.TextWrapping = TextWrapping.Wrap;
+            discoveryInfo.Margin = new Thickness(0, 8, 0, 0);
+            discoveryInfo.LineHeight = 19;
+            root.Children.Add(discoveryInfo);
 
             root.Children.Add(SectionTitle("启动方式"));
             var launchRow = new StackPanel();
@@ -212,6 +269,23 @@ namespace GameLog
             host.Children.Add(footer);
 
             return host;
+        }
+
+        static void UpdateIntervalPills(List<Border> pills, int[] minutes, int selected)
+        {
+            for (int i = 0; i < pills.Count && i < minutes.Length; i++)
+            {
+                bool on = minutes[i] == selected;
+                pills[i].Background = on ? Ui.AccentSoft : Ui.BgSoft;
+                pills[i].BorderBrush = on ? Ui.Accent : Ui.Line;
+                pills[i].BorderThickness = new Thickness(1);
+                var tb = pills[i].Child as TextBlock;
+                if (tb != null)
+                {
+                    tb.Foreground = on ? Ui.Accent : Ui.Sub;
+                    tb.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+                }
+            }
         }
 
         void SetMonitorEnabled(bool enabled)

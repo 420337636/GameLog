@@ -48,14 +48,14 @@ namespace GameLog
             }
             catch { }
 
-            AddKeyword(result, seen, file);
-
+            // 文件夹通常比 exe 名更准确（UE 游戏的 exe 常叫 xxx-Win64-Shipping），所以先取文件夹
             string[] parts = dir.Split(new char[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = parts.Length - 1; i >= 0; i--)
             {
                 AddKeyword(result, seen, parts[i]);
-                if (result.Count >= 6) break;
+                if (result.Count >= 4) break;
             }
+            AddKeyword(result, seen, file);
             return result;
         }
 
@@ -133,6 +133,8 @@ namespace GameLog
             t = Regex.Replace(t, @"(?i)\b(fitgirl|codex|plaza|skidrow|reloaded|empress|tenoke|goldberg|razor1911|cpy|repack|cracked|portable|setup)\b", " ");
             t = Regex.Replace(t, @"(?i)\bv?\d+(?:\.\d+){1,3}\b", " ");
             t = t.Replace('_', ' ').Replace('.', ' ').Replace('-', ' ');
+            // 去掉 UE 常见的平台后缀：Hellraiser-Win64-Shipping → Hellraiser
+            t = Regex.Replace(t, @"(?i)(\s+(win64|win32|x64|x86|shipping|debug|release|client|server|game))+$", " ");
             t = Regex.Replace(t, @"\s{2,}", " ").Trim();
             return t;
         }
@@ -187,7 +189,7 @@ namespace GameLog
 
             if (BestScore(pool) < 85 && Net.ConsecutiveFailures < 2)
             {
-                for (int i = 0; i < kws.Count && i < 2; i++)
+                for (int i = 0; i < kws.Count && i < 3; i++)
                 {
                     if (progress != null) progress("在百度搜索「" + kws[i] + "」是什么游戏…");
                     var web = new List<WebResult>();
@@ -395,6 +397,11 @@ namespace GameLog
                 if (!gamePage && !titleHasKw) continue;
 
                 string name = WebSource.NameFromTitle(page.Title);
+                if (!WebSource.LooksLikeGameName(name) && !string.IsNullOrEmpty(page.OgTitle))
+                {
+                    string fromOg = WebSource.NameFromTitle(page.OgTitle);
+                    if (WebSource.LooksLikeGameName(fromOg)) name = fromOg;
+                }
                 if (!WebSource.LooksLikeGameName(name))
                 {
                     // 只有页面正文里明确出现《关键词》时，才把关键词当作游戏名，避免把普通文件名硬凑成游戏

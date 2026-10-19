@@ -8,6 +8,7 @@ namespace GameLog
     public class PageInfo
     {
         public string Title = "";
+        public string OgTitle = "";
         public string Description = "";
         public string ImageUrl = "";
         public string FinalUrl = "";
@@ -94,6 +95,10 @@ namespace GameLog
             p.FinalUrl = baseUrl;
             p.Raw = html;
             p.Title = Html.Title(html);
+
+            var ogt = Regex.Match(html, "(?is)<meta[^>]+(?:property|name)=\"og:title\"[^>]+content=\"([^\"]+)\"");
+            if (!ogt.Success) ogt = Regex.Match(html, "(?is)<meta[^>]+content=\"([^\"]+)\"[^>]+(?:property|name)=\"og:title\"");
+            if (ogt.Success) p.OgTitle = Html.Text(ogt.Groups[1].Value);
 
             var d = Regex.Match(html, "(?is)<meta[^>]+name=\"description\"[^>]+content=\"([^\"]*)\"");
             if (!d.Success) d = Regex.Match(html, "(?is)<meta[^>]+content=\"([^\"]*)\"[^>]+name=\"description\"");
@@ -188,6 +193,9 @@ namespace GameLog
         {
             if (string.IsNullOrEmpty(title)) return "";
             string t = Html.Text(title).Trim();
+            // Steam 页面标题常见形式：“在 Steam 上购买 X”“Steam 上的 X”“X on Steam”
+            t = Regex.Replace(t, @"^(在\s*Steam\s*上购买|Steam\s*上的|Steam\s*-\s*)", "", RegexOptions.IgnoreCase).Trim();
+            t = Regex.Replace(t, @"(?i)\s*(购买|立省\s*\d+%)$", "").Trim();
 
             string[] siteSuffix = { "_百度百科", "-百度百科", "—百度百科", "_游民星空", "-游民星空", "_3DM", "_游侠", "_17173", "_九游", "_TapTap", "_哔哩哔哩", "_豆瓣" };
             foreach (var suffix in siteSuffix)
@@ -220,7 +228,8 @@ namespace GameLog
         {
             if (string.IsNullOrEmpty(name)) return false;
             name = name.Trim();
-            if (name.Length < 2 || name.Length > 24) return false;
+            int maxLength = Html.HasCjk(name) ? 24 : 60;
+            if (name.Length < 2 || name.Length > maxLength) return false;
             if (name.IndexOf("百度", StringComparison.Ordinal) >= 0) return false;
             if (name.IndexOf("下载", StringComparison.Ordinal) >= 0) return false;
             if (name.IndexOf("攻略", StringComparison.Ordinal) >= 0) return false;

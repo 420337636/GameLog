@@ -16,8 +16,11 @@ namespace GameLog
         public string CoversDir { get; private set; }
         public string DataFile { get; private set; }
         public string SettingsFile { get; private set; }
+        public string DiscoveryFile { get; private set; }
         public List<GameInfo> Games { get; private set; }
         public Settings Settings { get; private set; }
+        public Dictionary<string, string> NonGames { get; private set; }
+        public Dictionary<string, string> Removed { get; private set; }
 
         public event EventHandler Changed;
 
@@ -27,10 +30,13 @@ namespace GameLog
             CoversDir = Path.Combine(root, "covers");
             DataFile = Path.Combine(root, "games.json");
             SettingsFile = Path.Combine(root, "settings.json");
+            DiscoveryFile = Path.Combine(root, "discovery.json");
             Directory.CreateDirectory(Root);
             Directory.CreateDirectory(CoversDir);
             Games = new List<GameInfo>();
             Settings = new Settings();
+            NonGames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Removed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             Load();
         }
 
@@ -79,6 +85,7 @@ namespace GameLog
                         {
                             if (s.TickMs < 1000 || s.TickMs > 30000) s.TickMs = 2000;
                             if (string.IsNullOrEmpty(s.SortMode)) s.SortMode = "recent";
+                            if (string.IsNullOrEmpty(s.Layout)) s.Layout = "cards";
                             Settings = s;
                         }
                     }
@@ -86,6 +93,17 @@ namespace GameLog
                 catch (Exception ex)
                 {
                     Log.Error("读取 settings.json 失败", ex);
+                }
+
+                try
+                {
+                    LoadDiscovery();
+                    if (Settings.AutoDetectMinutes <= 0) Settings.AutoDetectMinutes = 5;
+                    if (Settings.AutoDetectMaxPerRun <= 0) Settings.AutoDetectMaxPerRun = 3;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("读取 discovery.json 失败", ex);
                 }
             }
         }
@@ -198,6 +216,7 @@ namespace GameLog
             }
 
             lock (gate) { Games.Add(g); }
+            ClearDiscoveryMarks(exePath);
             Save();
             Raise();
             Log.Info("添加游戏：" + g.Name + " <- " + exePath);
@@ -255,6 +274,96 @@ namespace GameLog
             Save();
             Raise();
             Log.Info("移除游戏：" + target.Name);
+            // 用户主动删除的，记录到 discovery.json，自动发现不再添加
+            if (!string.IsNullOrEmpty(target.ExePath)) MarkRemoved(target.ExePath);
+        }
+
+        // ---------------- 自动发现记录 ----------------
+
+        public bool IsKnownNonGame(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return false;
+            lock (gate) { return NonGames.ContainsKey(Normalize(exePath)); }
+        }
+
+        public void MarkNonGame(string exePath, string guessName)
+        {
+            if (string.IsNullOrEmpty(exePath)) return;
+            string key = Normalize(exePath);
+            string info = (guessName ?? "") + " | " + DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            lock (gate) { NonGames[key] = info; }
+            SaveDiscovery();
+            Log.Info("已记录非游戏（不再自动判断）：" + exePath);
+        }
+
+        public bool IsRemoved(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return false;
+            lock (gate) { return Removed.ContainsKey(Normalize(exePath)); }
+        }
+
+        public void MarkRemoved(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return;
+            lock (gate) { Removed[Normalize(exePath)] = DateTime.Now.ToString("yyyy-MM-dd HH:mm"); }
+            SaveDiscovery();
+            Log.Info("已记录删除（不再自动添加）：" + exePath);
+        }
+
+        public int NonGameCount { get { lock (gate) { return NonGames.Count; } } }
+        public int RemovedCount { get { lock (gate) { return Removed.Count; } } }
+
+        void ClearDiscoveryMarks(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return;
+            string key = Normalize(exePath);
+            bool changed = false;
+            lock (gate)
+            {
+                if (NonGames.Remove(key)) changed = true;
+                if (Removed.Remove(key)) changed = true;
+            }
+            if (changed) SaveDiscovery();
+        }
+
+        static string Normalize(string path)
+        {
+            return (path ?? "").Trim().ToLowerInvariant();
+        }
+
+        void LoadDiscovery()
+        {
+            try
+            {
+                if (!File.Exists(DiscoveryFile)) return;
+                string json = File.ReadAllText(DiscoveryFile, Encoding.UTF8);
+                var data = ser.Deserialize<DiscoveryData>(json);
+                if (data == null) return;
+                if (data.NonGames != null) NonGames = new Dictionary<string, string>(data.NonGames, StringComparer.OrdinalIgnoreCase);
+                if (data.Removed != null) Removed = new Dictionary<string, string>(data.Removed, StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("读取 discovery.json 失败：" + ex.Message);
+            }
+        }
+
+        public void SaveDiscovery()
+        {
+            try
+            {
+                var data = new DiscoveryData();
+                lock (gate)
+                {
+                    data.NonGames = new Dictionary<string, string>(NonGames);
+                    data.Removed = new Dictionary<string, string>(Removed);
+                }
+                AtomicWrite(DiscoveryFile, ser.Serialize(data));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("保存 discovery.json 失败：" + ex.Message);
+            }
         }
 
         public void ResetProgress(string id)

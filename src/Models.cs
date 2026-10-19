@@ -79,6 +79,14 @@ namespace GameLog
         public string SortMode { get; set; }
         public bool FirstRunDone { get; set; }
         public bool HideMenuBanner { get; set; }
+        /// <summary>自动扫描运行中的进程，识别为游戏就自动加入列表。</summary>
+        public bool AutoDetect { get; set; }
+        /// <summary>自动扫描间隔（分钟）。</summary>
+        public int AutoDetectMinutes { get; set; }
+        /// <summary>每轮最多识别几个进程（避免一次请求太多）。</summary>
+        public int AutoDetectMaxPerRun { get; set; }
+        /// <summary>主界面布局：cards（卡片）或 list（列表）。</summary>
+        public string Layout { get; set; }
 
         public Settings()
         {
@@ -86,6 +94,23 @@ namespace GameLog
             MonitorEnabled = true;
             TickMs = 2000;
             SortMode = "recent";
+            AutoDetect = true;
+            AutoDetectMinutes = 5;
+            AutoDetectMaxPerRun = 3;
+            Layout = "cards";
+        }
+    }
+
+    /// <summary>自动发现的持久化记录：已判定不是游戏的进程、用户删除过的游戏。</summary>
+    public class DiscoveryData
+    {
+        public Dictionary<string, string> NonGames { get; set; }
+        public Dictionary<string, string> Removed { get; set; }
+
+        public DiscoveryData()
+        {
+            NonGames = new Dictionary<string, string>();
+            Removed = new Dictionary<string, string>();
         }
     }
 

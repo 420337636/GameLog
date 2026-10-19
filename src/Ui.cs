@@ -401,6 +401,18 @@ namespace GameLog
             return rem == 0 ? h + " 小时" : h + " 小时 " + rem + " 分";
         }
 
+        /// <summary>游戏时长：以小时为单位；不足 1 小时显示“不足 1 小时”。</summary>
+        public static string Hours(double seconds)
+        {
+            if (seconds <= 0) return "尚未开始";
+            double h = seconds / 3600.0;
+            if (h < 1) return "不足 1 小时";
+            if (h >= 1000) return Math.Round(h).ToString("0") + " 小时";
+            double r = Math.Round(h, 1);
+            if (Math.Abs(r % 1) < 0.001) return r.ToString("0") + " 小时";
+            return r.ToString("0.0") + " 小时";
+        }
+
         public static string Ago(DateTime dt)
         {
             if (dt <= DateTime.MinValue || dt.Year < 2000) return "还没玩过";

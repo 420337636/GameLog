@@ -87,7 +87,31 @@ SIGNING_PFX_PASSWORD = .pfx 的密码
 
 ## 4. 本机签名（可选）
 
-拿到证书后，本机也可以手动签：
+### 4.1 本机自签名（只对本机有效）
+
+仓库里带了一套本地自签名脚本，用于在等待 SignPath 审核期间消除本机的 SmartScreen 弹窗：
+
+```bat
+tools\sign-local.cmd        :: 给 dist\GameLog.exe 签名
+tools\verify-signature.cmd  :: 查看签名状态
+tools\remove-local-cert.cmd :: 从本机信任存储移除证书（-All 同时删除私钥）
+```
+
+- 证书：`CN=GameLog, O=GameLog`，保存在 `Cert:\CurrentUser\My`，有效期 5 年；
+- 信任：写入 `CurrentUser\Root` 与 `CurrentUser\TrustedPublisher`；
+- 公钥证书导出在 `dist\GameLog-CodeSigning.cer`，可以发给别人安装到「受信任的根证书颁发机构 + 受信任的发布者」；
+- **只在当前用户/当前电脑有效**，换台机器仍然会提示；私钥不要外传。
+
+`build.cmd` 会覆盖 `dist\GameLog.exe`，所以重新编译后要再跑一次 `tools\sign-local.cmd`；也可以：
+
+```bat
+set SIGN_LOCAL=1
+build.cmd
+```
+
+### 4.2 用 CA 证书签名
+
+拿到证书后，本机也可以用 signtool 签：
 
 ```bat
 "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign ^
@@ -102,7 +126,7 @@ SIGNING_PFX_PASSWORD = .pfx 的密码
 signtool verify /pa /v dist\GameLog.exe
 ```
 
-想在 `build.cmd` 里自动签名，可在编译成功后追加：
+在 `build.cmd` 里自动签名可以加：
 
 ```bat
 if exist "%SIGN_PFX%" (

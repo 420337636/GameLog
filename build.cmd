@@ -38,3 +38,11 @@ if errorlevel 1 (
 echo.
 echo [OK] dist\GameLog.exe
 for %%F in (dist\GameLog.exe) do echo size: %%~zF bytes
+
+rem Optional: sign with the local self-signed certificate.
+rem set SIGN_LOCAL=1 before running build.cmd to enable.
+if /i "%SIGN_LOCAL%"=="1" (
+  echo.
+  echo [sign] signing with local certificate...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "tools\sign-local.ps1"
+)

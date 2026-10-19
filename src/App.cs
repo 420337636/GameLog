@@ -12,6 +12,7 @@ namespace GameLog
         public static readonly string Version = VersionString();
         public static string ResearchDir = "";
 
+        public Discoverer Discovery;
         public Store Store;
         public Monitor Monitor;
         public TrayIcon Tray;
@@ -97,6 +98,10 @@ namespace GameLog
 
             Monitor = new Monitor(Store);
             Monitor.Start();
+
+            Discovery = new Discoverer(Store);
+            Discovery.Discovered += OnGameDiscovered;
+            Discovery.Restart();
 
             bool menuFailed = false;
             if (RenderTo == null)
@@ -225,6 +230,29 @@ namespace GameLog
             Log.Info(paused ? "已暂停记录" : "已恢复记录");
         }
 
+        public void RestartDiscovery()
+        {
+            if (Discovery != null) Discovery.Restart();
+        }
+
+        void OnGameDiscovered(object sender, GameInfo g)
+        {
+            if (g == null) return;
+            Log.Info("自动发现新游戏：" + g.Name + " <- " + g.ExePath);
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (Window != null)
+                {
+                    Window.Rebuild();
+                    Window.ShowToast("自动发现《" + g.Name + "》，已加入列表");
+                }
+                if (Tray != null)
+                {
+                    Tray.ShowBalloon("自动发现游戏", "已加入《" + g.Name + "》，开始记录游玩时间");
+                }
+            }));
+        }
+
         public void NotifyHiddenToTray()
         {
             if (Tray != null) Tray.ShowBalloon("GameLog 还在后台运行", "游戏时间会继续记录；右键托盘图标可以退出。");
@@ -237,6 +265,7 @@ namespace GameLog
             Log.Info("退出 GameLog");
             try { if (Store != null) Store.Save(); } catch { }
             try { if (Monitor != null) Monitor.Stop(); } catch { }
+            try { if (Discovery != null) Discovery.Stop(); } catch { }
             try { if (Tray != null) Tray.Dispose(); } catch { }
             try { Shutdown(); } catch { }
         }
