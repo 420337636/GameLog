@@ -1,0 +1,71 @@
+name: signpath-release
+
+# 只有把仓库变量 SIGNPATH_ENABLED 设为 true 时才会运行。
+# 在 SignPath 批准之前，这个工作流不会做任何事，也不会影响 build.yml。
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  sign:
+    if: vars.SIGNPATH_ENABLED == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (in-box .NET Framework compiler)
+        shell: cmd
+        run: build.cmd
+
+      - name: Upload unsigned artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameLog-unsigned
+          path: dist/GameLog.exe
+          if-no-files-found: error
+
+      - name: Submit signing request to SignPath
+        id: sign
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: List signed files
+        shell: pwsh
+        run: Get-ChildItem -Recurse signed | Select-Object FullName, Length
+
+      - name: Verify signature
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse signed -Filter GameLog.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "signed GameLog.exe not found" }
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          $sig | Format-List Status, StatusMessage, SignerCertificate
+          if ($sig.Status -ne 'Valid') { throw "signature is not valid: $($sig.Status)" }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            signed/GameLog.exe
+          body: |
+            已签名版本（SignPath Foundation）。
+
+            Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+            首次运行如遇 SmartScreen，请确认发布者显示为 SignPath Foundation。

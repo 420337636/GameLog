@@ -1,0 +1,13 @@
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <!--
+    GameLog 的签名对象：dist/GameLog.exe
+    上传到 GitHub Actions 的 artifact 默认是 ZIP，所以根节点是 zip-file。
+    在 SignPath 里创建 artifact configuration 时，把 slug 设为 windows-exe，
+    并把这段 XML 粘贴进去（或用 “upload artifact to generate” 功能生成）。
+  -->
+  <zip-file>
+    <pe-file path="GameLog.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

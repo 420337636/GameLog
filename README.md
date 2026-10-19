@@ -3,6 +3,8 @@
 一个 Windows 桌面小工具：把游戏 exe 用右键菜单加进来，自动识别游戏的中文名与封面，并在后台记录你在这台电脑上为每款游戏花了多少时间。
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![build](https://github.com/420337636/GameLog/actions/workflows/build.yml/badge.svg)](https://github.com/420337636/GameLog/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/420337636/GameLog)](https://github.com/420337636/GameLog/releases)
 
 ![主界面](docs/main.png)
 
@@ -182,6 +184,8 @@ src\
 - 发布出来的 exe **未做代码签名**，首次运行会出现 SmartScreen「Windows 已保护你的电脑」：点「更多信息 → 仍要运行」即可放行（同一个文件只需一次）。
 - 想彻底消除提示只能用受信任 CA 的证书。免费途径（Certum Open Source Code Signing、SignPath Foundation、Microsoft Store 个人开发者）的申请材料清单、GitHub Actions 自动签名配置，都整理在 [docs/open-source.md](docs/open-source.md)。
 - 从建仓库到拿到证书的逐步操作（含英文申请信模板）见 [docs/github-publish.md](docs/github-publish.md)。
+- 代码签名策略：[CODE_SIGNING.md](CODE_SIGNING.md)；安全问题报告：[SECURITY.md](SECURITY.md)；版本记录：[CHANGELOG.md](CHANGELOG.md)；隐私说明：[PRIVACY.md](PRIVACY.md)。
+- 发布版本计划通过 **SignPath Foundation** 的免费开源代码签名（Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)）；签名后 `signtool verify` 可校验发布者。
 
 ## English
 
