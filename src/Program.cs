@@ -55,6 +55,15 @@ namespace GameLog
                 MenuRenderTest(o);
                 return;
             }
+            if (o.Mode == "autostart")
+            {
+                bool on = string.Equals(o.AutoStartArg, "on", StringComparison.OrdinalIgnoreCase);
+                AutoStart.SetEnabled(on);
+                Console.WriteLine("autostart " + (on ? "on" : "off") + " => enabled=" + AutoStart.IsEnabled());
+                Console.WriteLine("shortcut=" + AutoStart.StartupShortcut);
+                Console.WriteLine("launcher=" + AutoStart.LauncherPath);
+                Environment.Exit(0);
+            }
             if (o.Mode == "disc-test")
             {
                 DiscoveryTest(o);
@@ -525,6 +534,7 @@ namespace GameLog
         public bool Demo;
         public string ResearchDir = "";
         public string Dialog = "";
+        public string AutoStartArg = "";
         public List<string> TestPaths = new List<string>();
 
         public static Options Parse(string[] args)
@@ -570,6 +580,10 @@ namespace GameLog
                         break;
                     case "--disc-test":
                         o.Mode = "disc-test";
+                        break;
+                    case "--autostart":
+                        o.Mode = "autostart";
+                        if (next != null && !next.StartsWith("-")) { o.AutoStartArg = next; i++; }
                         break;
                     case "--disc-remove":
                         o.Mode = "disc-remove";

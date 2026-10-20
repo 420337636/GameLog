@@ -197,16 +197,38 @@ namespace GameLog
         }
     }
 
-    /// <summary>开机自启（HKCU Run）。</summary>
+    /// <summary>
+    /// 开机自启：在“启动”文件夹放快捷方式，指向一个会等待磁盘就绪、失败重试的启动脚本。
+    /// 不用 HKCU Run，因为 Run 键在登录瞬间执行，副盘（例如 D:）可能还没就绪，导致静默失败。
+    /// </summary>
     public static class AutoStart
     {
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         const string ValueName = "GameLog";
 
+        public static string LauncherPath
+        {
+            get
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GameLog");
+                return Path.Combine(dir, "autostart.cmd");
+            }
+        }
+
+        public static string StartupShortcut
+        {
+            get
+            {
+                string dir = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+                return Path.Combine(dir, "GameLog.lnk");
+            }
+        }
+
         public static bool IsEnabled()
         {
             try
             {
+                if (File.Exists(StartupShortcut)) return true;
                 using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
                 {
                     if (k == null) return false;
@@ -220,13 +242,81 @@ namespace GameLog
         {
             try
             {
-                using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
+                if (enabled)
                 {
-                    if (enabled) k.SetValue(ValueName, "\"" + ShellMenu.AppExe + "\" --minimized");
-                    else k.DeleteValue(ValueName, false);
+                    WriteLauncher();
+                    if (!CreateStartupShortcut()) throw new InvalidOperationException("创建启动快捷方式失败");
+                    RemoveRunValue();
+                    Log.Info("已启用开机自启（启动文件夹 + 延迟重试）");
+                }
+                else
+                {
+                    DeleteStartupShortcut();
+                    RemoveRunValue();
+                    Log.Info("已关闭开机自启");
                 }
             }
             catch (Exception ex) { Log.Error("设置开机自启失败", ex); }
+        }
+
+        static void WriteLauncher()
+        {
+            string exe = ShellMenu.AppExe;
+            string path = LauncherPath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var sb = new StringBuilder();
+            sb.AppendLine("@echo off");
+            sb.AppendLine("rem GameLog 开机启动器：等 exe 所在磁盘就绪，最多等 120 秒");
+            sb.AppendLine("setlocal");
+            sb.AppendLine("for /l %%i in (1,1,24) do (");
+            sb.AppendLine("  if exist \"" + exe + "\" (");
+            sb.AppendLine("    start \"\" \"" + exe + "\" --minimized");
+            sb.AppendLine("    exit /b 0");
+            sb.AppendLine("  )");
+            sb.AppendLine("  timeout /t 5 /nobreak >nul");
+            sb.AppendLine(")");
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+        }
+
+        static bool CreateStartupShortcut()
+        {
+            string exe = ShellMenu.AppExe;
+            string link = StartupShortcut;
+            if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return false;
+
+            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null) return false;
+            object shell = Activator.CreateInstance(shellType);
+            object shortcut = shellType.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { link });
+            if (shortcut == null) return false;
+
+            Type st = shortcut.GetType();
+            st.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { Environment.GetEnvironmentVariable("COMSPEC") });
+            st.InvokeMember("Arguments", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "/c \"\"" + LauncherPath + "\"\"" });
+            st.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(exe) });
+            st.InvokeMember("WindowStyle", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { 7 });
+            st.InvokeMember("IconLocation", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { exe + ",0" });
+            st.InvokeMember("Description", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "GameLog 游戏时光" });
+            st.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
+            return File.Exists(link);
+        }
+
+        static void DeleteStartupShortcut()
+        {
+            try { if (File.Exists(StartupShortcut)) File.Delete(StartupShortcut); }
+            catch (Exception ex) { Log.Warn("删除启动快捷方式失败：" + ex.Message); }
+        }
+
+        static void RemoveRunValue()
+        {
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(RunKey, true))
+                {
+                    if (k != null) k.DeleteValue(ValueName, false);
+                }
+            }
+            catch { }
         }
     }
 }
