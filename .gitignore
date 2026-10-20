@@ -18,6 +18,7 @@ pending.txt
 # 本地测试/渲染目录
 .render*/
 .test*/
+.utest/
 .mtest/
 .smoke*/
 .importtest/

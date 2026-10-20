@@ -126,6 +126,7 @@ namespace GameLog
                 if (store.IsRemoved(path)) continue;
                 if (store.IsKnownNonGame(path)) continue;
                 if (ShouldSkip(path)) continue;
+                if (IsEngineHelper(Path.GetFileNameWithoutExtension(path))) continue;
                 candidates.Add(path);
             }
 
@@ -215,6 +216,7 @@ namespace GameLog
         {
             if (string.IsNullOrEmpty(path)) return "skip: empty";
             if (ShouldSkip(path)) return "skip: system/program path";
+            if (IsEngineHelper(Path.GetFileNameWithoutExtension(path))) return "skip: engine helper";
             if (store.IsRemoved(path)) return "skip: removed before";
             if (store.IsKnownNonGame(path)) return "skip: known non-game";
             foreach (var g in store.Snapshot())
@@ -227,6 +229,29 @@ namespace GameLog
                 if (string.Equals(g.ExePath, path, StringComparison.OrdinalIgnoreCase)) return "added: " + g.Name;
             }
             return "not a game (remembered)";
+        }
+
+        /// <summary>
+        /// 引擎自带的崩溃上报/辅助进程，不是游戏本体。
+        /// Unity 游戏都有 UnityCrashHandler32/64.exe，虚幻有 CrashReportClient、UnrealCEFSubProcess 等。
+        /// </summary>
+        static readonly HashSet<string> EngineHelpers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "unitycrashhandler32", "unitycrashhandler64", "unityplayer",
+            "crashreportclient", "crashreportclientwin64", "crashreportclientwin32",
+            "unrealcefsubprocess", "epicwebhelper", "crashpadhandler", "crashpad_handler",
+            "werfault", "dxdiag", "steamerrorreporter",
+            "easyanticheat", "easyanticheat_eos", "beservice", "battleye", "vgc", "vgtray"
+        };
+
+        static bool IsEngineHelper(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string n = name.Trim();
+            if (n.IndexOf("crashhandler", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (n.IndexOf("crashreport", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (n.IndexOf("crashpad", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return EngineHelpers.Contains(n);
         }
 
         /// <summary>太泛的名字（“我的游戏”“小游戏”“游戏中心”）不自动加入列表。</summary>
