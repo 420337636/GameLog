@@ -158,7 +158,7 @@ build.cmd
 - 界面：WPF（纯 C# 代码构建，无 XAML 编译依赖）
 - 存储：`games.json` / `settings.json`
 - 抓取：`Baidu.cs`、`Gamersky.cs`、`WebSource.cs`、`Identifier.cs`
-- 监控：`Monitor.cs`（每秒扫描进程，30 秒自动落盘）
+- 监控：`Monitor.cs`（默认每 5 分钟检测一次，可设 1/5/10 分钟；30 秒自动落盘，退出前补记零头）
 - 右键菜单：`ShellMenu.cs`（`HKCU\Software\Classes\exefile\shell\GameLogAdd`）
 - 构建：[`.github/workflows/build.yml`](.github/workflows/build.yml)（GitHub Actions，用 Windows 自带编译器）
 

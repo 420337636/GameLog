@@ -87,6 +87,8 @@ namespace GameLog
         public int AutoDetectMaxPerRun { get; set; }
         /// <summary>主界面布局：cards（卡片）或 list（列表）。</summary>
         public string Layout { get; set; }
+        /// <summary>记录游戏时长的检测间隔（秒）。</summary>
+        public int MonitorSeconds { get; set; }
 
         public Settings()
         {
@@ -98,6 +100,7 @@ namespace GameLog
             AutoDetectMinutes = 5;
             AutoDetectMaxPerRun = 3;
             Layout = "cards";
+            MonitorSeconds = 300;
         }
     }
 

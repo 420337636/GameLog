@@ -62,7 +62,38 @@ namespace GameLog
             var record = Ui.Check("记录游戏运行时长", store.Settings.MonitorEnabled, null);
             record.Checked += delegate { SetMonitorEnabled(true); };
             record.Unchecked += delegate { SetMonitorEnabled(false); };
-            root.Children.Add(Row(record, "每隔 1 秒检查已添加的游戏是否在运行。"));
+            root.Children.Add(Row(record, "每 5 分钟检查一次已添加的游戏是否在运行（按实际间隔累计时长）。"));
+
+            var monitorLabel = Ui.TxtBlock("检测间隔", 12, Ui.Sub);
+            monitorLabel.Margin = new Thickness(0, 6, 0, 6);
+            root.Children.Add(monitorLabel);
+
+            var monitorRow = new StackPanel();
+            monitorRow.Orientation = Orientation.Horizontal;
+            var monitorButtons = new List<Border>();
+            int[] monitorMinutes = { 1, 5, 10 };
+            foreach (int m in monitorMinutes)
+            {
+                var pill = new Border();
+                pill.CornerRadius = new CornerRadius(8);
+                pill.Padding = new Thickness(12, 6, 12, 7);
+                pill.Margin = new Thickness(0, 0, 8, 0);
+                pill.Cursor = Cursors.Hand;
+                var t = Ui.TxtBlock(m + " 分钟", 12, Ui.Sub);
+                pill.Child = t;
+                int value = m;
+                pill.MouseLeftButtonUp += delegate
+                {
+                    store.Settings.MonitorSeconds = value * 60;
+                    store.SaveSettings();
+                    app.RestartMonitor();
+                    UpdateIntervalPills(monitorButtons, monitorMinutes, store.Settings.MonitorSeconds / 60);
+                };
+                monitorButtons.Add(pill);
+                monitorRow.Children.Add(pill);
+            }
+            UpdateIntervalPills(monitorButtons, monitorMinutes, store.Settings.MonitorSeconds / 60);
+            root.Children.Add(monitorRow);
 
             root.Children.Add(SectionTitle("自动发现游戏"));
             var autoDetect = Ui.Check("自动扫描运行中的程序，识别到游戏就加入列表", store.Settings.AutoDetect, null);

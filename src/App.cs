@@ -235,6 +235,11 @@ namespace GameLog
             if (Discovery != null) Discovery.Restart();
         }
 
+        public void RestartMonitor()
+        {
+            if (Monitor != null) Monitor.Restart();
+        }
+
         void OnGameDiscovered(object sender, GameInfo g)
         {
             if (g == null) return;

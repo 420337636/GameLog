@@ -86,6 +86,7 @@ namespace GameLog
                             if (s.TickMs < 1000 || s.TickMs > 30000) s.TickMs = 2000;
                             if (string.IsNullOrEmpty(s.SortMode)) s.SortMode = "recent";
                             if (string.IsNullOrEmpty(s.Layout)) s.Layout = "cards";
+                            if (s.MonitorSeconds < 30 || s.MonitorSeconds > 3600) s.MonitorSeconds = 300;
                             Settings = s;
                         }
                     }

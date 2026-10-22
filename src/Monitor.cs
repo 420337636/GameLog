@@ -29,7 +29,40 @@ namespace GameLog
         {
             if (timer != null) return;
             lastTick = DateTime.UtcNow;
-            timer = new Timer(Tick, null, 700, 1000);
+            int seconds = IntervalSeconds;
+            // 2 秒后先跑一次，把已经在运行的游戏尽快统计进来；之后按设置的间隔
+            timer = new Timer(Tick, null, 2000, seconds * 1000);
+            Log.Info("监控已启动：每 " + seconds + " 秒检测一次");
+        }
+
+        public void Restart()
+        {
+            Stop();
+            Start();
+        }
+
+        public int IntervalSeconds
+        {
+            get
+            {
+                int s = store.Settings.MonitorSeconds;
+                if (s < 30) s = 300;
+                if (s > 3600) s = 3600;
+                return s;
+            }
+        }
+
+        public string IntervalLabel
+        {
+            get
+            {
+                int s = IntervalSeconds;
+                if (s < 60) return "每 " + s + " 秒";
+                int m = s / 60;
+                if (m < 60) return m == 1 ? "每 1 分钟" : "每 " + m + " 分钟";
+                int h = s / 3600;
+                return "每 " + h + " 小时";
+            }
         }
 
         public void Stop()
@@ -37,6 +70,8 @@ namespace GameLog
             if (timer == null) return;
             timer.Dispose();
             timer = null;
+            try { FlushPartial(); }
+            catch (Exception ex) { Log.Warn("退出前补记时长失败：" + ex.Message); }
             lock (gate) { runningIds.Clear(); sessionStart.Clear(); }
         }
 
@@ -91,7 +126,7 @@ namespace GameLog
                     return;
                 }
 
-                if (delta > 20) delta = 2; // 休眠/唤醒后避免把睡眠时间算作游戏时间
+                if (delta > IntervalSeconds * 3) delta = IntervalSeconds; // 休眠/唤醒后避免把睡眠时间算作游戏时间
 
                 HashSet<string> procs = RunningProcessNames();
                 var stillRunning = new HashSet<string>();
@@ -141,6 +176,31 @@ namespace GameLog
             catch (Exception ex)
             {
                 Log.Error("监控异常", ex);
+            }
+        }
+
+        /// <summary>退出/暂停前，把最后一次检测到现在的零头补记上，避免丢掉最多一个间隔的时长。</summary>
+        void FlushPartial()
+        {
+            double delta;
+            lock (gate) { delta = (DateTime.UtcNow - lastTick).TotalSeconds; lastTick = DateTime.UtcNow; }
+            if (delta <= 0) return;
+            if (delta > IntervalSeconds * 2) return;
+            bool any = false;
+            lock (gate)
+            {
+                if (runningIds.Count == 0) return;
+                foreach (var g in store.Snapshot())
+                {
+                    if (g == null || !runningIds.Contains(g.Id)) continue;
+                    g.AddSeconds(delta, DateTime.Now);
+                    any = true;
+                }
+            }
+            if (any)
+            {
+                store.Save();
+                Log.Info("退出前补记 " + delta.ToString("0") + " 秒");
             }
         }
 

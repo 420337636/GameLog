@@ -33,6 +33,7 @@ namespace GameLog
         Border toast;
         TextBlock toastText;
         DispatcherTimer toastTimer;
+        DispatcherTimer liveTimer;
         Border menuBanner;
         Border dropHint;
         readonly List<KeyValuePair<string, Border>> sortButtons = new List<KeyValuePair<string, Border>>();
@@ -74,6 +75,12 @@ namespace GameLog
             {
                 Dispatcher.BeginInvoke(new Action(UpdateLive));
             };
+
+            // 界面自己每秒刷新一次（监控本身可能是 5 分钟一次，界面不能跟着卡住）
+            liveTimer = new DispatcherTimer();
+            liveTimer.Interval = TimeSpan.FromSeconds(1);
+            liveTimer.Tick += delegate { UpdateLive(); };
+            liveTimer.Start();
 
             Loaded += delegate
             {
@@ -845,9 +852,10 @@ namespace GameLog
 
             if (statusLeft != null)
             {
+                string label = monitor != null ? monitor.IntervalLabel : "每 5 分钟";
                 statusLeft.Text = paused
                     ? "● 已暂停记录 · " + games.Count + " 款游戏已加入监控"
-                    : "● 正在记录 · 每秒检测 " + games.Count + " 款游戏的运行状态";
+                    : "● 正在记录 · " + label + "检测 " + games.Count + " 款游戏的运行状态";
                 statusLeft.Foreground = paused ? Ui.Dim : Ui.Sub;
             }
 
