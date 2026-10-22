@@ -83,6 +83,18 @@ namespace GameLog
             Log.Info("命令行：" + string.Join(" ", args));
 
             bool created;
+            if (o.Multi)
+            {
+                // 测试用：跳过单实例检查，允许并行启动
+                var app0 = new App();
+                app0.DataDir = o.DataDir;
+                app0.StartMinimized = o.Minimized;
+                app0.PendingAdd = o.AddPath;
+                app0.Demo = o.Demo;
+                App.ResearchDir = o.ResearchDir;
+                app0.Run();
+                return;
+            }
             using (var mutex = new Mutex(true, "GameLog.SingleInstance.v1", out created))
             {
                 if (!created)
@@ -534,6 +546,7 @@ namespace GameLog
         public bool Demo;
         public string ResearchDir = "";
         public string Dialog = "";
+        public bool Multi;
         public string AutoStartArg = "";
         public List<string> TestPaths = new List<string>();
 
@@ -580,6 +593,9 @@ namespace GameLog
                         break;
                     case "--disc-test":
                         o.Mode = "disc-test";
+                        break;
+                    case "--multi":
+                        o.Multi = true;
                         break;
                     case "--autostart":
                         o.Mode = "autostart";
