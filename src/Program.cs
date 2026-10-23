@@ -64,6 +64,22 @@ namespace GameLog
                 Console.WriteLine("launcher=" + AutoStart.LauncherPath);
                 Environment.Exit(0);
             }
+            if (o.Mode == "gamecheck")
+            {
+                try { Log.Init(Path.Combine(Path.GetTempPath(), "GameLog-check")); } catch { }
+                var sb = new StringBuilder();
+                foreach (var name in o.TestPaths)
+                {
+                    bool? r = GameCheck.IsGame(name);
+                    string line = name + " => " + (r == null ? "unknown" : (r == true ? "game" : "software"))
+                        + "  article=" + GameCheck.LooksLikeArticle(name);
+                    sb.AppendLine(line);
+                    Console.WriteLine(line);
+                }
+                try { File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "gamecheck.txt"), sb.ToString(), new UTF8Encoding(false)); }
+                catch { }
+                Environment.Exit(0);
+            }
             if (o.Mode == "disc-test")
             {
                 DiscoveryTest(o);
@@ -593,6 +609,9 @@ namespace GameLog
                         break;
                     case "--disc-test":
                         o.Mode = "disc-test";
+                        break;
+                    case "--gamecheck":
+                        o.Mode = "gamecheck";
                         break;
                     case "--multi":
                         o.Multi = true;

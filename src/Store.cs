@@ -303,6 +303,26 @@ namespace GameLog
             lock (gate) { return Removed.ContainsKey(Normalize(exePath)); }
         }
 
+        /// <summary>这个目录下是否已经有游戏了（同一游戏的多进程只加一个）。</summary>
+        public bool HasGameInDirectory(string directory)
+        {
+            if (string.IsNullOrEmpty(directory)) return false;
+            string d = directory.TrimEnd('\\', '/').ToLowerInvariant();
+            lock (gate)
+            {
+                foreach (var g in Games)
+                {
+                    if (g == null || string.IsNullOrEmpty(g.ExePath)) continue;
+                    string gd;
+                    try { gd = Path.GetDirectoryName(g.ExePath); }
+                    catch { continue; }
+                    if (string.IsNullOrEmpty(gd)) continue;
+                    if (string.Equals(gd.TrimEnd('\\', '/').ToLowerInvariant(), d, StringComparison.Ordinal)) return true;
+                }
+            }
+            return false;
+        }
+
         public void MarkRemoved(string exePath)
         {
             if (string.IsNullOrEmpty(exePath)) return;

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace GameLog
@@ -110,13 +112,12 @@ namespace GameLog
             string self = SelfPath();
             var candidates = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var dirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var p in Process.GetProcesses())
             {
-                string path = null;
-                try { path = p.MainModule.FileName; }
-                catch { }
-                finally { try { p.Dispose(); } catch { } }
+                string path = SafePath(p);
+                try { p.Dispose(); } catch { }
 
                 if (string.IsNullOrEmpty(path)) continue;
                 if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
@@ -127,6 +128,10 @@ namespace GameLog
                 if (store.IsKnownNonGame(path)) continue;
                 if (ShouldSkip(path)) continue;
                 if (IsEngineHelper(Path.GetFileNameWithoutExtension(path))) continue;
+                // 同一个目录只取一个进程：有些游戏会同时跑两三个 exe
+                string dir = Path.GetDirectoryName(path) ?? "";
+                if (dir.Length == 0 || !dirs.Add(dir)) continue;
+                if (store.HasGameInDirectory(dir)) continue;
                 candidates.Add(path);
             }
 
@@ -170,12 +175,31 @@ namespace GameLog
             if (r.Success)
             {
                 Log.Info("自动发现：识别结果《" + r.Name + "》 score=" + r.Score.ToString("0.0"));
-                if (r.Score < 70 || IsGenericName(r.Name))
+                if (r.Score < 70 || IsGenericName(r.Name) || GameCheck.LooksLikeArticle(r.Name))
                 {
-                    Log.Info("自动发现：置信度不足或名字太泛，不自动加入：" + path);
+                    Log.Info("自动发现：置信度不足、名字太泛或像文章标题，不自动加入：" + path + " => " + r.Name);
                     store.MarkNonGame(path, r.Name);
                     return false;
                 }
+
+                // 再问一句“这是游戏吗”：图吧工具箱、AIDA64 这类工具会被百度结果里的软件特征拦下
+                bool? isGame = GameCheck.IsGame(r.Name);
+                if (isGame == false)
+                {
+                    Log.Info("自动发现：判断为软件/工具，不加入：" + r.Name);
+                    store.MarkNonGame(path, r.Name);
+                    var nf = NonGameFound;
+                    if (nf != null) nf(this, EventArgs.Empty);
+                    return false;
+                }
+
+                string dir = Path.GetDirectoryName(path) ?? "";
+                if (dir.Length > 0 && store.HasGameInDirectory(dir))
+                {
+                    Log.Info("自动发现：同目录已有游戏，跳过：" + path);
+                    return false;
+                }
+
                 var g = store.Add(path, r.Name, r.CoverData, r.CoverUrl, r.PageUrl);
                 if (g != null)
                 {
@@ -223,6 +247,8 @@ namespace GameLog
             {
                 if (string.Equals(g.ExePath, path, StringComparison.OrdinalIgnoreCase)) return "skip: already in list";
             }
+            string testDir = Path.GetDirectoryName(path) ?? "";
+            if (testDir.Length > 0 && store.HasGameInDirectory(testDir)) return "skip: same folder";
             Analyze(path);
             foreach (var g in store.Snapshot())
             {
@@ -232,8 +258,7 @@ namespace GameLog
         }
 
         /// <summary>
-        /// 引擎自带的崩溃上报/辅助进程，不是游戏本体。
-        /// Unity 游戏都有 UnityCrashHandler32/64.exe，虚幻有 CrashReportClient、UnrealCEFSubProcess 等。
+        /// 引擎自带的崩溃上报/辅助进程，不是游戏本体。        /// Unity 游戏都有 UnityCrashHandler32/64.exe，虚幻有 CrashReportClient、UnrealCEFSubProcess 等。
         /// </summary>
         static readonly HashSet<string> EngineHelpers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -268,18 +293,60 @@ namespace GameLog
             return false;
         }
 
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr OpenProcess(int access, bool inherit, int pid);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool QueryFullProcessImageName(IntPtr handle, int flags, StringBuilder buffer, ref int size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool CloseHandle(IntPtr handle);
+
+        /// <summary>
+        /// 取进程路径：先走 MainModule，失败再用 QueryFullProcessImageName（带反作弊/提权的游戏往往只能走这条）。
+        /// </summary>
+        static string SafePath(Process p)
+        {
+            try { return p.MainModule.FileName; }
+            catch { }
+            IntPtr handle = IntPtr.Zero;
+            try
+            {
+                handle = OpenProcess(0x1000, false, p.Id); // PROCESS_QUERY_LIMITED_INFORMATION
+                if (handle == IntPtr.Zero) return null;
+                var sb = new StringBuilder(1024);
+                int size = sb.Capacity;
+                if (QueryFullProcessImageName(handle, 0, sb, ref size)) return sb.ToString();
+            }
+            catch { }
+            finally
+            {
+                if (handle != IntPtr.Zero) CloseHandle(handle);
+            }
+            return null;
+        }
+
         static string SelfPath()
         {
             try { return Process.GetCurrentProcess().MainModule.FileName; }
             catch { return ""; }
         }
 
-        /// <summary>系统盘、Program Files、Windows、AppData 下的进程大概率是软件，直接跳过；Steam 游戏库例外。</summary>
+        /// <summary>系统盘、Program Files、Windows、AppData 下的进程大概率是软件，直接跳过；常见游戏目录例外。</summary>
         static bool ShouldSkip(string path)
         {
             string p = path.ToLowerInvariant();
-            // Steam 游戏库通常在 C:\Program Files (x86)\Steam\steamapps\common\...，这里放行
-            if (p.IndexOf("\\steamapps\\common\\", StringComparison.Ordinal) >= 0) return false;
+            // 常见游戏安装目录放行（Steam、Epic、GOG、战网、CoD、育碧、Riot、EA、Rockstar）
+            string[] gameFolders =
+            {
+                "\\steamapps\\common\\", "\\epic games\\", "\\gog games\\", "\\battle.net\\",
+                "\\call of duty\\", "\\ubisoft\\", "\\riot games\\", "\\ea games\\",
+                "\\xboxgames\\", "\\rockstar games\\"
+            };
+            foreach (var f in gameFolders)
+            {
+                if (p.IndexOf(f, StringComparison.Ordinal) >= 0) return false;
+            }
             if (p.StartsWith("c:")) return true;
             string[] bad =
             {
