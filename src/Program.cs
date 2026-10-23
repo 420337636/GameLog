@@ -64,6 +64,22 @@ namespace GameLog
                 Console.WriteLine("launcher=" + AutoStart.LauncherPath);
                 Environment.Exit(0);
             }
+            if (o.Mode == "deepseek")
+            {
+                try { Log.Init(Path.Combine(Path.GetTempPath(), "GameLog-ds")); } catch { }
+                var ds = new Store(o.DataDir);
+                var dsb = new StringBuilder();
+                dsb.AppendLine("key configured: " + (!string.IsNullOrEmpty(ds.Settings.DeepSeekKey)));
+                foreach (var p in o.TestPaths)
+                {
+                    var r = Identifier.Identify(p, null);
+                    dsb.AppendLine(p + " => success=" + r.Success + " name=" + r.Name + " score=" + r.Score
+                        + " cover=" + (r.CoverData == null ? 0 : r.CoverData.Length) + " msg=" + r.Message);
+                }
+                try { File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "deepseek.txt"), dsb.ToString(), new UTF8Encoding(false)); }
+                catch { }
+                Environment.Exit(0);
+            }
             if (o.Mode == "gamecheck")
             {
                 try { Log.Init(Path.Combine(Path.GetTempPath(), "GameLog-check")); } catch { }
@@ -609,6 +625,9 @@ namespace GameLog
                         break;
                     case "--disc-test":
                         o.Mode = "disc-test";
+                        break;
+                    case "--deepseek":
+                        o.Mode = "deepseek";
                         break;
                     case "--gamecheck":
                         o.Mode = "gamecheck";

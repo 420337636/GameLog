@@ -19,6 +19,8 @@ pending.txt
 .render*/
 .test*/
 .utest/
+deepseek.txt
+gamecheck.txt
 .mtest/
 .smoke*/
 .importtest/

@@ -95,6 +95,31 @@ namespace GameLog
             UpdateIntervalPills(monitorButtons, monitorMinutes, store.Settings.MonitorSeconds / 60);
             root.Children.Add(monitorRow);
 
+            root.Children.Add(SectionTitle("DeepSeek 识别（可选）"));
+            var keyBox = new PasswordBox();
+            keyBox.Width = 360;
+            keyBox.Height = 34;
+            keyBox.Background = Ui.BgSoft;
+            keyBox.Foreground = Ui.Txt;
+            keyBox.BorderBrush = Ui.Line;
+            keyBox.BorderThickness = new Thickness(1);
+            keyBox.Padding = new Thickness(9, 6, 9, 6);
+            keyBox.Password = store.Settings.DeepSeekKey ?? "";
+            keyBox.LostFocus += delegate
+            {
+                store.Settings.DeepSeekKey = (keyBox.Password ?? "").Trim();
+                store.SaveSettings();
+                Log.Info("DeepSeek Key " + (string.IsNullOrEmpty(store.Settings.DeepSeekKey) ? "已清空" : "已更新"));
+            };
+            keyBox.KeyDown += delegate (object s, KeyEventArgs e)
+            {
+                if (e.Key != Key.Enter) return;
+                store.Settings.DeepSeekKey = (keyBox.Password ?? "").Trim();
+                store.SaveSettings();
+                ShowToastSafe(string.IsNullOrEmpty(store.Settings.DeepSeekKey) ? "已清空 DeepSeek Key，改用百度识别" : "已保存 DeepSeek Key");
+            };
+            root.Children.Add(Row(keyBox, "填入 DeepSeek API Key 后，识别游戏时会先问 DeepSeek（更准，单次约 100 token）；留空则用原来的百度/游民星空流程。Key 只保存在本机 settings.json，不会上传到别处。"));
+
             root.Children.Add(SectionTitle("自动发现游戏"));
             var autoDetect = Ui.Check("自动扫描运行中的程序，识别到游戏就加入列表", store.Settings.AutoDetect, null);
             autoDetect.Checked += delegate

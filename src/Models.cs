@@ -89,6 +89,8 @@ namespace GameLog
         public string Layout { get; set; }
         /// <summary>记录游戏时长的检测间隔（秒）。</summary>
         public int MonitorSeconds { get; set; }
+        /// <summary>DeepSeek API Key；留空则用百度/游民星空的识别流程。</summary>
+        public string DeepSeekKey { get; set; }
 
         public Settings()
         {
@@ -101,6 +103,7 @@ namespace GameLog
             AutoDetectMaxPerRun = 3;
             Layout = "cards";
             MonitorSeconds = 300;
+            DeepSeekKey = "";
         }
     }
 

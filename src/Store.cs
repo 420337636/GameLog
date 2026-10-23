@@ -22,11 +22,15 @@ namespace GameLog
         public Dictionary<string, string> NonGames { get; private set; }
         public Dictionary<string, string> Removed { get; private set; }
 
+        /// <summary>当前进程最近创建的那个 Store（DeepSeek 等静态辅助类用它读设置）。</summary>
+        public static Store Current { get; private set; }
+
         public event EventHandler Changed;
 
         public Store(string root)
         {
             Root = root;
+            Current = this;
             CoversDir = Path.Combine(root, "covers");
             DataFile = Path.Combine(root, "games.json");
             SettingsFile = Path.Combine(root, "settings.json");

@@ -162,6 +162,31 @@ namespace GameLog
         public static IdentifyResult Identify(string exePath, Action<string> progress)
         {
             var res = new IdentifyResult();
+            IdentifyResult dsFallback = null;
+
+            // 配了 DeepSeek Key 就先问它；失败/没配就继续原来的百度流程
+            if (DeepSeek.Enabled)
+            {
+                if (progress != null) progress("问 DeepSeek 这是什么游戏…");
+                string dsName = DeepSeek.Identify(exePath);
+                if (!string.IsNullOrEmpty(dsName))
+                {
+                    Log.Info("DeepSeek 识别：" + exePath + " => " + dsName);
+                    var byDs = BuildFromName(dsName);
+                    if (byDs != null)
+                    {
+                        // 有封面就直接用；名字对但补不到封面（冷门/新作），继续走百度流程试试
+                        if (byDs.CoverData != null) return byDs;
+                        dsFallback = byDs;
+                        Log.Info("DeepSeek 名字没配到封面，继续用百度流程尝试");
+                    }
+                }
+                else
+                {
+                    Log.Warn("DeepSeek 没有给出结果，回退到百度识别");
+                }
+            }
+
             var kws = Keywords(exePath);
             if (kws.Count == 0)
             {
@@ -271,6 +296,11 @@ namespace GameLog
 
             if (list.Count == 0)
             {
+                if (dsFallback != null)
+                {
+                    dsFallback.Message += "（百度没有补充到封面）";
+                    return dsFallback;
+                }
                 res.Success = false;
                 if (Net.ConsecutiveFailures >= 2) res.Message = "网络似乎不可用，请检查网络后重试，或先直接添加稍后再识别";
                 else if (anyRequest) res.Message = "没有找到匹配的游戏，请手动输入名称搜索";
@@ -325,6 +355,124 @@ namespace GameLog
                 res.Message = "没有把握确定是哪款游戏，请手动选择或输入名称";
             }
             Log.Info("识别结束：" + res.Message + " score=" + res.Score.ToString("0.0") + " slug=" + best.Slug);
+            // DeepSeek 已经给出名字时，百度只找到个 60~85 分的模糊结果就别覆盖它
+            if (dsFallback != null && (!res.Success || res.Score < 85))
+            {
+                dsFallback.Message += "（百度结果不够可信，保留 DeepSeek 的名字）";
+                return dsFallback;
+            }
+            return res;
+        }
+
+        /// <summary>DeepSeek 已经给出游戏名，这里只补中文名/封面/页面。</summary>
+        static IdentifyResult BuildFromName(string name)
+        {
+            var res = new IdentifyResult();
+            res.Query = name;
+
+            var best = new GameCandidate();
+            best.Name = name;
+            best.Origin = "DeepSeek";
+            best.Score = 90;
+
+            try
+            {
+                var variants = new List<string>();
+                variants.Add(name);
+                string plain = name.Replace("：", " ").Replace(":", " ").Replace("·", " ").Trim();
+                if (plain != name && plain.Length >= 2) variants.Add(plain);
+                string digits = Regex.Replace(name, "VII", "7");
+                digits = Regex.Replace(digits, "VI", "6");
+                digits = Regex.Replace(digits, "IV", "4");
+                digits = Regex.Replace(digits, "III", "3");
+                digits = Regex.Replace(digits, "II", "2");
+                if (digits != name) variants.Add(digits);
+                if (plain != name)
+                {
+                    string plainDigits = Regex.Replace(plain, "VII", "7");
+                    plainDigits = Regex.Replace(plainDigits, "VI", "6");
+                    plainDigits = Regex.Replace(plainDigits, "IV", "4");
+                    plainDigits = Regex.Replace(plainDigits, "III", "3");
+                    plainDigits = Regex.Replace(plainDigits, "II", "2");
+                    if (plainDigits != plain) variants.Add(plainDigits);
+                }
+
+                GameCandidate pick = null;
+                double pickScore = 0;
+                foreach (var v in variants)
+                {
+                    List<GameCandidate> hits;
+                    try { hits = Gamersky.Search(v); }
+                    catch { continue; }
+                    foreach (var c in hits)
+                    {
+                        double s = Score(v, c, 0);
+                        if (s > pickScore) { pickScore = s; pick = c; }
+                    }
+                    if (pickScore >= 80) break;
+                }
+                if (pick != null && pickScore >= 55)
+                {
+                    best = pick;
+                    best.Score = Math.Max(90, pickScore);
+                }
+            }
+            catch (Exception ex) { Log.Warn("DeepSeek 名称补封面失败：" + ex.Message); }
+
+            if (string.IsNullOrEmpty(best.CoverUrl) && string.IsNullOrEmpty(best.Slug))
+            {
+                try
+                {
+                    var baike = WebSource.LookupBaike(name);
+                    if (baike != null)
+                    {
+                        if (string.IsNullOrEmpty(best.Name) || !Html.HasCjk(best.Name))
+                        {
+                            if (!string.IsNullOrEmpty(baike.Name)) best.Name = baike.Name;
+                        }
+                        if (string.IsNullOrEmpty(best.CoverUrl)) best.CoverUrl = baike.CoverUrl;
+                        if (string.IsNullOrEmpty(best.PageUrl)) best.PageUrl = baike.PageUrl;
+                    }
+                }
+                catch { }
+            }
+
+            // 百度百科也没有时，再试 Steam 商店（竖版封面，命中率不错）
+            if (string.IsNullOrEmpty(best.CoverUrl) && string.IsNullOrEmpty(best.Slug))
+            {
+                try
+                {
+                    var steam = SteamStore.Find(name);
+                    if (steam != null)
+                    {
+                        if (!string.IsNullOrEmpty(steam.CoverUrl)) best.CoverUrl = steam.CoverUrl;
+                        if (string.IsNullOrEmpty(best.PageUrl)) best.PageUrl = steam.PageUrl;
+                    }
+                }
+                catch (Exception ex) { Log.Warn("Steam 补封面失败：" + ex.Message); }
+            }
+
+            res.Name = TightenCjk(best.Name);
+            res.Slug = best.Slug;
+            res.PageUrl = best.PageUrl;
+            res.CoverUrl = best.CoverUrl;
+            res.Score = best.Score;
+            res.Success = !string.IsNullOrEmpty(res.Name);
+            res.Candidates = new List<GameCandidate>();
+            res.Candidates.Add(best);
+
+            string usedUrl = null;
+            byte[] cover = null;
+            try { cover = CoverService.Fetch(best, out usedUrl); }
+            catch (Exception ex) { Log.Warn("DeepSeek 封面下载失败：" + ex.Message); }
+            if (cover != null)
+            {
+                res.CoverData = cover;
+                if (!string.IsNullOrEmpty(usedUrl)) res.CoverUrl = usedUrl;
+            }
+
+            res.Message = "已由 DeepSeek 识别为《" + res.Name + "》，封面" + (cover != null ? "已获取" : "未获取到");
+            Log.Info("识别结束（DeepSeek）：" + res.Name + " score=" + res.Score.ToString("0.0") + " slug=" + best.Slug);
             return res;
         }
 
